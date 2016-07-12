@@ -9,6 +9,7 @@ import logging
 class RadiocutShowDownloadFunctions(unittest.TestCase):
     def setUp(self):
         self.radio_show_name = 'marca-de-radio'
+        self.radio_show_output_filename = 'marca-de-radio-2016-07-09'
         self.radiocut_sample_date = datetime.strptime('2016-07-09T10:00:00', '%Y-%m-%dT%H:%M:%S')
         self.radiocut_sample_date_str = '2016-07-09T10:00:00-03:00'
         self.radiocut_sample_date_as_epoch = 1468069200
@@ -79,7 +80,7 @@ class RadiocutShowDownloadFunctions(unittest.TestCase):
 
     def test_should_get_audio_info(self):
         logging.info('Fetch show audio info')
-        audio_info_result = radiocut_dl.get_show_audio_info(self.show_info)
+        audio_info_result = radiocut_dl.fetch_show_audio_info(self.show_info)
         self.assertEquals(audio_info_result['audio_station'], self.audio_info['audio_station'])
         self.assertEquals(audio_info_result['audio_seconds'], self.audio_info['audio_seconds'])
         self.assertEquals(audio_info_result['audio_base_url'], self.audio_info['audio_base_url'])
@@ -122,7 +123,7 @@ class RadiocutShowDownloadFunctions(unittest.TestCase):
         self.assertTrue(os.stat(radio_show_directory) != None)
         self.assertEqual(len(os.listdir(radio_show_directory)), len(mp3_chunks_list))
 
-        radio_show_mp3 = radiocut_dl.concatenate_mp3_chunks(radio_show_directory)
+        radio_show_mp3 = radiocut_dl.concatenate_mp3_chunks(radio_show_directory, self.radio_show_output_filename)
 
         self.assertTrue(os.stat(radio_show_mp3))
         os.remove(radio_show_mp3)

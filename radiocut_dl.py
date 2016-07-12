@@ -1,9 +1,12 @@
 """Radiocut.fm downloader
 
 Usage:
-  radiocut-dl <radio-show-name> [-d <radio-show-date>] [-o <output-directory>]
+  radiocut-dl <radio-show-name> [-d <radio-show-date>] [-o <output-directory>] [-f <mp3-filename>]
   radiocut-dl -h | --help
   radiocut-dl --version
+
+  This script relies on the mp3wrap tool: http://mp3wrap.sourceforge.net
+  Make sure it's downloaded and accessible in the PATH
 
 Options:
   -h --help     Show this screen.
@@ -28,8 +31,8 @@ radiocut_date_pattern = '%Y-%m-%d'
 radiocut_datetime_pattern = '%Y-%m-%dT%H:%M:%S'
 mp3_extension = '.mp3'
 mp3_wrap_command = 'mp3wrap.exe'
-
 __version__ = '0.0.1'
+
 
 def setup_logging():
     root = logging.getLogger()
@@ -66,40 +69,6 @@ def fetch_url(url):
         raise
     logging.debug('URL retrieved')
     return result
-
-
-def fetch_show_information(radio_show_name, radio_show_date = None):
-    """Fetches the Radiocut radio show information
-
-    Args:
-        radio_show_name (string): Name of the Radiocut radio show
-        radio_show_date (datetime): Date of the airing of the Radiocut radio show
-
-    Returns:
-        show_information (dict): The Radiocut show information
-
-    Raises:
-        HTTPError: Error if the page is not found.
-
-    """
-    show_url = base_url + '/api/radioshows/' + radio_show_name + '/last_recordings/'
-
-    # Calculate query date
-    if radio_show_date is not None:
-        radio_show_date_str = datetime.strftime(radio_show_date, radiocut_date_pattern)
-        logging.debug('Include date in URL: ' + radio_show_date_str)
-        from_date = datetime.strftime(radio_show_date + timedelta(days=1), radiocut_datetime_pattern)
-        show_url += '?now=' + from_date
-
-    shows_list_json = json.loads(fetch_url(show_url))
-
-    if radio_show_date is not None:
-        radio_show_date_str = datetime.strftime(radio_show_date, radiocut_date_pattern)
-        show_information = next(show for show in shows_list_json if radio_show_date_str in show['start'])
-    else:
-        show_information = shows_list_json[0]
-
-    return show_information
 
 
 def radiocutdate_to_datetime(radiocut_datetime_str):
@@ -148,7 +117,41 @@ def epoch_to_radiocut_datetime_str(radiocut_epoch):
     return radiocut_datetime
 
 
-def get_show_audio_info(show_info):
+def fetch_show_information(radio_show_name, radio_show_date = None):
+    """Fetches the Radiocut radio show information
+
+    Args:
+        radio_show_name (string): Name of the Radiocut radio show
+        radio_show_date (datetime): Date of the airing of the Radiocut radio show
+
+    Returns:
+        show_information (dict): The Radiocut show information
+
+    Raises:
+        HTTPError: Error if the page is not found.
+
+    """
+    show_url = base_url + '/api/radioshows/' + radio_show_name + '/last_recordings/'
+
+    # Calculate query date
+    if radio_show_date is not None:
+        radio_show_date_str = datetime.strftime(radio_show_date, radiocut_date_pattern)
+        logging.debug('Include date in URL: ' + radio_show_date_str)
+        from_date = datetime.strftime(radio_show_date + timedelta(days=1), radiocut_datetime_pattern)
+        show_url += '?now=' + from_date
+
+    shows_list_json = json.loads(fetch_url(show_url))
+
+    if radio_show_date is not None:
+        radio_show_date_str = datetime.strftime(radio_show_date, radiocut_date_pattern)
+        show_information = next(show for show in shows_list_json if radio_show_date_str in show['start'])
+    else:
+        show_information = shows_list_json[0]
+
+    return show_information
+
+
+def fetch_show_audio_info(show_info):
     """Retrieves the Radiocut show audio information given the show information
 
     Args:
@@ -212,12 +215,13 @@ def fetch_json_chunks(audio_info, start_datetime, end_datetime):
     return radio_show_chunks_list
 
 
-def download_json_chunks(radio_show_name, mp3_chunks_list):
+def download_json_chunks(radio_show_name, mp3_chunks_list, final_mp3_directory = None):
     """Download all mp3 chunks from a list for a Radiocut radio show
 
     Args:
         radio_show_name (str): Radiocut radio show name
         mp3_chunks_list (dict): Radiocut radio show chunks list
+        final_mp3_directory (str): Directory where the chunks will be placed
 
     Returns:
         radio_show_directory (str): Directory where all mp3 chunks have been saved
@@ -225,6 +229,9 @@ def download_json_chunks(radio_show_name, mp3_chunks_list):
     logging.debug('Retrieve each MP3 chunk')
     radio_show_date = epoch_to_radiocut_datetime_str(mp3_chunks_list[0]['start']).strftime(radiocut_date_pattern)
     radio_show_directory = radio_show_name + '-' + radio_show_date
+    if final_mp3_directory is not None:
+        final_mp3_directory = os.path.abspath(final_mp3_directory)
+        radio_show_directory = os.path.join(final_mp3_directory, radio_show_directory)
     try:
         os.stat(radio_show_directory)
     except:
@@ -239,33 +246,47 @@ def download_json_chunks(radio_show_name, mp3_chunks_list):
     return radio_show_directory
 
 
-def concatenate_mp3_chunks(radio_show_directory):
+def concatenate_mp3_chunks(radio_show_chunks_directory, final_mp3_filename):
     """Concatenate all mp3 chunks into a single mp3 file
 
     Args:
-        radio_show_directory (str): Directory where all mp3 chunks are for a radio show
+        radio_show_chunks_directory (str): Directory where all mp3 chunks are for a radio show
 
     Returns:
         final_mp3_file (str): Filename for the resulting mp3 file
     """
     logging.debug('Create a single MP3 file for the radio show')
-    expand_all_mp3_files = radio_show_directory + '/*' + mp3_extension
-    final_mp3_file = radio_show_directory + mp3_extension
+    radio_show_chunks_directory = os.path.abspath(radio_show_chunks_directory)
+    radio_show_directory = os.path.abspath(radio_show_chunks_directory + '/..')
+    expand_all_mp3_files = radio_show_chunks_directory + '/*' + mp3_extension
+    final_mp3_filename += mp3_extension
+    final_mp3_filepath = os.path.join(radio_show_directory, final_mp3_filename)
 
-    subprocess.call([mp3_wrap_command, final_mp3_file, expand_all_mp3_files])
+    subprocess.call([mp3_wrap_command, final_mp3_filepath, expand_all_mp3_files])
 
-    shutil.move(radio_show_directory + '_MP3WRAP' + mp3_extension, final_mp3_file)
-    shutil.rmtree(radio_show_directory)
+    shutil.move(radio_show_chunks_directory + '_MP3WRAP' + mp3_extension, final_mp3_filepath)
+    shutil.rmtree(radio_show_chunks_directory)
 
-    logging.debug('Radio show created: ' + final_mp3_file)
-    return final_mp3_file
+    logging.debug('Radio show created: ' + final_mp3_filepath)
+    return final_mp3_filepath
 
-def radiocut_show_download(radio_show_name, radio_sho_date = None, output_directory = None):
-    return None
+
+def radiocut_show_download(radio_show_name, radio_show_date = None, output_directory = None, mp3_filename = None):
+    show_info = fetch_show_information(radio_show_name, radio_show_date)
+    audio_info = fetch_show_audio_info(show_info)
+    start_date = radiocutdate_to_datetime(show_info['start'])
+    end_date = radiocutdate_to_datetime(show_info['end'])
+    json_chunks = fetch_json_chunks(audio_info, start_date, end_date)
+    radio_show_directory = download_json_chunks(radio_show_name, json_chunks, output_directory)
+    if mp3_filename is None:
+        mp3_filename = radio_show_name + start_date.strftime(radiocut_date_pattern)
+    concatenate_mp3_chunks(radio_show_directory, mp3_filename)
+
 
 def main():
     arguments = docopt(__doc__, version=__version__)
-    radiocut_show_download(arguments['<radio-show-name>'], arguments['<radio-show-date>'], arguments['<output-directory>'])
+    radiocut_show_download(arguments['<radio-show-name>'], arguments['<radio-show-date>'], arguments['<output-directory>'], arguments['<mp3-filename>'])
+
 
 if __name__ == '__main__':
     setup_logging()
