@@ -13,17 +13,18 @@ Options:
   -v --version  Show version.
 """
 
-from BeautifulSoup import BeautifulSoup
-from datetime import datetime
 from datetime import timedelta
+from bs4 import BeautifulSoup
 from docopt import docopt
+import urllib.parse
+import urllib.request
+import datetime
 import shutil
 import subprocess
 import os
 import time
 import json
 import logging
-import urllib2
 import sys
 
 base_url = 'http://radiocut.fm'
@@ -58,12 +59,13 @@ def fetch_url(url):
         HTTPError: Error if the page is not found.
 
     """
-    opener = urllib2.build_opener()
-    opener.addheaders = [('User-agent', 'Mozilla/5.0')]
+    headers = {'User-agent': 'Mozilla/5.0'}
     logging.debug('Retrieving URL: ' + url)
     try:
-        result = opener.open(url).read()
-    except urllib2.HTTPError, e:
+        req = urllib.request.Request(url, data=None, headers=headers)
+        with urllib.request.urlopen(req) as response:
+            result = response.read()
+    except urllib.error.URLError as e:
         if '404' == str(e.code):
             logging.error('URL not found')
         raise
@@ -82,7 +84,7 @@ def radiocutdate_to_datetime(radiocut_datetime_str):
     """
     logging.debug('Datetime to convert: ' + radiocut_datetime_str)
     radiocut_datetime_str = radiocut_datetime_str[:-6]
-    radiocut_datetime = datetime.strptime(radiocut_datetime_str, radiocut_datetime_pattern)
+    radiocut_datetime = datetime.datetime.strptime(radiocut_datetime_str, radiocut_datetime_pattern)
     return radiocut_datetime
 
 
@@ -112,7 +114,7 @@ def epoch_to_radiocut_datetime_str(radiocut_epoch):
         radiocut_epoch (string): Radiocut datetime string
     """
     logging.debug('Epoch to convert: ' + str(radiocut_epoch))
-    radiocut_datetime = datetime.fromtimestamp(radiocut_epoch)
+    radiocut_datetime = datetime.datetime.fromtimestamp(radiocut_epoch)
     logging.debug('Datetime converted: ' + radiocut_datetime.strftime(radiocut_datetime_pattern))
     return radiocut_datetime
 
@@ -135,15 +137,15 @@ def fetch_show_information(radio_show_name, radio_show_date = None):
 
     # Calculate query date
     if radio_show_date is not None:
-        radio_show_date_str = datetime.strftime(radio_show_date, radiocut_date_pattern)
+        radio_show_date_str = datetime.datetime.strftime(radio_show_date, radiocut_date_pattern)
         logging.debug('Include date in URL: ' + radio_show_date_str)
-        from_date = datetime.strftime(radio_show_date + timedelta(days=1), radiocut_datetime_pattern)
+        from_date = datetime.datetime.strftime(radio_show_date + timedelta(days=1), radiocut_datetime_pattern)
         show_url += '?now=' + from_date
 
     shows_list_json = json.loads(fetch_url(show_url))
 
     if radio_show_date is not None:
-        radio_show_date_str = datetime.strftime(radio_show_date, radiocut_date_pattern)
+        radio_show_date_str = datetime.datetime.strftime(radio_show_date, radiocut_date_pattern)
         show_information = next(show for show in shows_list_json if radio_show_date_str in show['start'])
     else:
         show_information = shows_list_json[0]
